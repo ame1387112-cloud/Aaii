@@ -30,13 +30,14 @@ def keep_alive():
 
 # --- 3. توابع اصلی ربات ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """ارسال پیام خوشامدگویی و راهنمایی."""
+    """ارسال پیام خوشامدگویی و راهنمایی نهایی."""
     await update.message.reply_text(
         "به ربات تولید عکس آزاد خوش آمدی! 🎨\n\n"
         "برای ساخت عکس، پیامت رو اینجوری بنویس:\n"
-        "`موضوع عکس | سبک عکس`\n\n"
+        "`موضوع عکس (به انگلیسی) | سبک عکس (به انگلیسی)`\n\n"
         "مثال:\n"
-        "یک گربه فضایی روی مریخ | انیمه، سینمایی"
+        "`a space cat on mars | anime, cinematic`\n\n"
+        "🔥 نکته مهم: برای بهترین نتیجه، هم موضوع و هم سبک عکس رو به زبان انگلیسی بنویسید."
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -47,7 +48,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if '|' not in user_message:
         await update.message.reply_text(
             "لطفاً پیامت رو با فرمت درست بنویس.\n"
-            "مثال: `یک گربه فضایی روی مریخ | انیمه، سینمایی`"
+            "مثال: `a space cat on mars | anime, cinematic`"
         )
         return
         
@@ -58,7 +59,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not prompt or not style:
         await update.message.reply_text(
             "هم موضوع و هم سبک عکس رو باید مشخص کنی.\n"
-            "مثال: `یک گربه فضایی روی مریخ | انیمه، سینمایی`"
+            "مثال: `a space cat on mars | anime, cinematic`"
         )
         return
 
@@ -95,7 +96,6 @@ def main() -> None:
     keep_alive()
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
-    # دیگه نیازی به CallbackQueryHandler نیست
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.run_polling()
 
