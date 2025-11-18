@@ -2,8 +2,7 @@ import asyncio
 import logging
 import os
 import io
-from flask import Flask
-from threading import Thread
+from flask import Flask, request
 from telegram import Update, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import perchance
@@ -13,24 +12,29 @@ from PIL import Image
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
+PORT = int(os.environ.get('PORT', 8080))
 
-# --- 2. سیستم Keep Alive برای Render ---
-app = Flask('')
+# --- 2. ساخت اپلیکیشن Flask برای Keep Alive و Webhook ---
+app = Flask(__name__)
 
 @app.route('/')
 def home():
+    """برای اینکه Render فکر کنه سرویس زنده است."""
     return "Bot is alive!"
 
-def run():
-    app.run(host='0.0.0.0', port=8080)
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """این مسیر پیام‌ها رو از تلگرام دریافت می‌کنه."""
+    application = Application.builder().token(TOKEN).build()
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    # اینجا باید منطق پردازش پیام رو فراخوانی کنیم
+    # اما روش بهتر، استفاده از قابلیت داخلی کتابخانه است
+    # پس این تابع رو خالی میذاریم و کتابخانه کار رو انجام میده
+    return "ok"
 
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
 
-# --- 3. توابع اصلی ربات ---
+# --- 3. توابع اصلی ربات (بدون تغییر) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """ارسال پیام خوشامدگویی و راهنمایی نهایی."""
     await update.message.reply_text(
         "به ربات تولید عکس آزاد خوش آمدی! 🎨\n\n"
         "برای ساخت عکس، پیامت رو اینجوری بنویس:\n"
@@ -41,10 +45,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """پردازش پیام کاربر و تولید عکس."""
     user_message = update.message.text
     
-    # جدا کردن موضوع و سبک با استفاده از کاراکتر |
     if '|' not in user_message:
         await update.message.reply_text(
             "لطفاً پیامت رو با فرمت درست بنویس.\n"
@@ -66,7 +68,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await handle_image_generation(update, prompt, style)
 
 async def handle_image_generation(update: Update, prompt: str, style: str) -> None:
-    """تولید و ارسال تصویر."""
     full_prompt = f"{prompt}, {style}"
     
     await update.message.reply_text("در حال تولید تصویر... ⏳")
@@ -92,12 +93,25 @@ async def handle_image_generation(update: Update, prompt: str, style: str) -> No
             "متأسفانه در تولید تصویر مشکلی پیش آمد. لطفاً کمی بعد دوباره تلاش کنید."
         )
 
+# --- 4. تابع اصلی با Webhook ---
 def main() -> None:
-    keep_alive()
+    # ساخت اپلیکیشن تلگرام و اتصالش به اپلیکیشن Flask
     application = Application.builder().token(TOKEN).build()
+    
+    # اضافه کردن هندلرها
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.run_polling()
+    
+    # آدرس وبهوک
+    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL')}/webhook"
+    
+    # راه‌اندازی ربات با وبهوک
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="webhook",
+        webhook_url=webhook_url
+    )
 
 if __name__ == "__main__":
     main()
