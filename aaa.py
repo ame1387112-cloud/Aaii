@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 import io
-from flask import Flask, request
 from telegram import Update, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import perchance
@@ -12,28 +11,9 @@ from PIL import Image
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
-PORT = int(os.environ.get('PORT', 8080))
+PORT = int(os.environ.get('PORT', 8443)) # Render از پورت 8443 استفاده می‌کنه
 
-# --- 2. ساخت اپلیکیشن Flask برای Keep Alive و Webhook ---
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    """برای اینکه Render فکر کنه سرویس زنده است."""
-    return "Bot is alive!"
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """این مسیر پیام‌ها رو از تلگرام دریافت می‌کنه."""
-    application = Application.builder().token(TOKEN).build()
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    # اینجا باید منطق پردازش پیام رو فراخوانی کنیم
-    # اما روش بهتر، استفاده از قابلیت داخلی کتابخانه است
-    # پس این تابع رو خالی میذاریم و کتابخانه کار رو انجام میده
-    return "ok"
-
-
-# --- 3. توابع اصلی ربات (بدون تغییر) ---
+# --- 2. توابع اصلی ربات (بدون هیچ تغییری) ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "به ربات تولید عکس آزاد خوش آمدی! 🎨\n\n"
@@ -93,24 +73,28 @@ async def handle_image_generation(update: Update, prompt: str, style: str) -> No
             "متأسفانه در تولید تصویر مشکلی پیش آمد. لطفاً کمی بعد دوباره تلاش کنید."
         )
 
-# --- 4. تابع اصلی با Webhook ---
+# --- 3. تابع اصلی با Webhook ساده و تمیز ---
 def main() -> None:
-    # ساخت اپلیکیشن تلگرام و اتصالش به اپلیکیشن Flask
+    """راه‌اندازی ربات با وبهوک."""
     application = Application.builder().token(TOKEN).build()
     
     # اضافه کردن هندلرها
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # آدرس وبهوک
-    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL')}/webhook"
-    
-    # راه‌اندازی ربات با وبهوک
+    # ساخت آدرس وبهوک
+    # Render این متغیر رو به صورت خودکار در اختیار ما قرار می‌ده
+    webhook_url = os.getenv("RENDER_EXTERNAL_URL")
+    if not webhook_url:
+        logger.error("RENDER_EXTERNAL_URL environment variable not set.")
+        return
+
+    # راه‌اندازی ربات
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path="webhook",
-        webhook_url=webhook_url
+        url_path="webhook", # مسیری که تلگرام باید بهش درخواست بفرسته
+        webhook_url=f"{webhook_url}/webhook" # آدرس کامل
     )
 
 if __name__ == "__main__":
