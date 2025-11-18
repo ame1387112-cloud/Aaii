@@ -2,7 +2,8 @@ import asyncio
 import logging
 import os
 import io
-from telegram import Update, InputFile
+import subprocess
+from telegram import Update, InputFile, InputMediaPhoto
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import perchance
 from PIL import Image
@@ -11,17 +12,45 @@ from PIL import Image
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
-PORT = int(os.environ.get('PORT', 8443)) # Render از پورت 8443 استفاده می‌کنه
+PORT = int(os.environ.get('PORT', 8443))
 
-# --- 2. توابع اصلی ربات (بدون هیچ تغییری) ---
+# --- 2. دیکشنری سبک‌ها (کلید فارسی -> پرامپت انگلیسی) ---
+STYLES = {
+    "انیمه": "anime, cinematic, detailed",
+    "واقعی": "photorealistic, high quality, 8k",
+    "نقاشی": "oil painting, classic art, detailed",
+    "سه‌بعدی": "3d render, octane, detailed",
+    "کارتونی": "cartoon, disney style, colorful",
+    "سایبرپانک": "cyberpunk, neon lights, futuristic",
+    "فانتزی": "fantasy art, ethereal, magical",
+    "پیکسلی": "pixel art, 16-bit, retro"
+}
+
+# --- 3. تابع نصب مرورگر ---
+def install_playwright_browser():
+    """این تابع مرورگر Playwright رو در صورت نیاز نصب می‌کنه."""
+    try:
+        logger.info("در حال بررسی نصب بودن مرورگر Playwright...")
+        subprocess.run(["playwright", "install", "chromium"], check=True, capture_output=True, text=True)
+        logger.info("مرورگر Playwright با موفقیت آماده به کار شد.")
+    except FileNotFoundError:
+        logger.error("دستور playwright پیدا نشد. آیا کتابخانه به درستی نصب شده؟")
+        raise
+    except subprocess.CalledProcessError as e:
+        logger.error(f"خطا هنگام نصب مرورگر: {e.stderr}")
+        raise
+
+# --- 4. توابع اصلی ربات ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """ارسال پیام خوشامدگویی و لیست سبک‌ها."""
+    style_list = "\n".join([f"• {key}" for key in STYLES.keys()])
     await update.message.reply_text(
-        "به ربات تولید عکس آزاد خوش آمدی! 🎨\n\n"
-        "برای ساخت عکس، پیامت رو اینجوری بنویس:\n"
-        "`موضوع عکس (به انگلیسی) | سبک عکس (به انگلیسی)`\n\n"
+        "به ربات تولید عکس پیشرفته خوش آمدی! 🎨\n\n"
+        "برای ساخت ۴ عکس، پیامت رو اینجوری بنویس:\n"
+        "`موضوع عکس (به انگلیسی) | کلید سبک`\n\n"
+        f"کلیدهای سبک موجود:\n{style_list}\n\n"
         "مثال:\n"
-        "`a space cat on mars | anime, cinematic`\n\n"
-        "🔥 نکته مهم: برای بهترین نتیجه، هم موضوع و هم سبک عکس رو به زبان انگلیسی بنویسید."
+        "`a futuristic city | سایبرپانک`"
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -30,42 +59,58 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if '|' not in user_message:
         await update.message.reply_text(
             "لطفاً پیامت رو با فرمت درست بنویس.\n"
-            "مثال: `a space cat on mars | anime, cinematic`"
+            "مثال: `a futuristic city | سایبرپانک`"
         )
         return
         
-    prompt, style = user_message.split('|', 1)
+    prompt, style_key = user_message.split('|', 1)
     prompt = prompt.strip()
-    style = style.strip()
+    style_key = style_key.strip()
     
-    if not prompt or not style:
+    if not prompt or not style_key:
         await update.message.reply_text(
-            "هم موضوع و هم سبک عکس رو باید مشخص کنی.\n"
-            "مثال: `a space cat on mars | anime, cinematic`"
+            "هم موضوع و هم کلید سبک رو باید مشخص کنی.\n"
+            "مثال: `a futuristic city | سایبرپانک`"
         )
         return
 
-    await handle_image_generation(update, prompt, style)
+    if style_key not in STYLES:
+        await update.message.reply_text(
+            f"کلید سبک '{style_key}' معتبر نیست. لطفاً از کلیدهای موجود استفاده کن."
+        )
+        return
 
-async def handle_image_generation(update: Update, prompt: str, style: str) -> None:
-    full_prompt = f"{prompt}, {style}"
+    await handle_image_generation(update, prompt, style_key)
+
+async def handle_image_generation(update: Update, prompt: str, style_key: str) -> None:
+    """تولید و ارسال ۴ تصویر به صورت یکجا."""
+    style_prompt = STYLES[style_key]
+    full_prompt = f"{prompt}, {style_prompt}"
     
-    await update.message.reply_text("در حال تولید تصویر... ⏳")
+    await update.message.reply_text(f"در حال تولید ۴ تصویر با سبک '{style_key}'... ⏳")
     
+    media_group = []
     try:
         gen = perchance.ImageGenerator()
-        async with await gen.image(full_prompt) as result:
-            binary = await result.download()
-            image = Image.open(binary)
-            
-            img_byte_arr = io.BytesIO()
-            image.save(img_byte_arr, format='PNG')
-            img_byte_arr.seek(0)
-            
-            await update.message.reply_photo(
-                photo=InputFile(img_byte_arr, filename=f"{prompt[:20]}.png"),
-                caption=f"تصویر «{prompt}» با سبک «{style}» تولید شد."
-            )
+        # حلقه برای تولید ۴ تصویر
+        for i in range(4):
+            async with await gen.image(full_prompt) as result:
+                binary = await result.download()
+                image = Image.open(binary)
+                
+                img_byte_arr = io.BytesIO()
+                image.save(img_byte_arr, format='PNG')
+                img_byte_arr.seek(0)
+                
+                # اضافه کردن هر عکس به گروه مدیا
+                media_group.append(InputMediaPhoto(media=InputFile(img_byte_arr, filename=f"image_{i}.png")))
+
+        # ارسال تمام ۴ عکس به صورت یک آلبوم
+        await context.bot.send_media_group(
+            chat_id=update.effective_chat.id,
+            media=media_group,
+            caption=f"۴ تصویر برای «{prompt}» با سبک «{style_key}» تولید شد."
+        )
             
     except Exception as e:
         logger.error(f"Error generating image: {e}")
@@ -73,28 +118,26 @@ async def handle_image_generation(update: Update, prompt: str, style: str) -> No
             "متأسفانه در تولید تصویر مشکلی پیش آمد. لطفاً کمی بعد دوباره تلاش کنید."
         )
 
-# --- 3. تابع اصلی با Webhook ساده و تمیز ---
+# --- 5. تابع اصلی با فراخوانی نصب مرورگر ---
 def main() -> None:
-    """راه‌اندازی ربات با وبهوک."""
+    """راه‌اندازی ربات با نصب مرورگر."""
+    install_playwright_browser()
+    
     application = Application.builder().token(TOKEN).build()
     
-    # اضافه کردن هندلرها
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # ساخت آدرس وبهوک
-    # Render این متغیر رو به صورت خودکار در اختیار ما قرار می‌ده
     webhook_url = os.getenv("RENDER_EXTERNAL_URL")
     if not webhook_url:
-        logger.error("RENDER_EXTERNAL_URL environment variable not set.")
+        logger.error("متغیر RENDER_EXTERNAL_URL تنظیم نشده است.")
         return
 
-    # راه‌اندازی ربات
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path="webhook", # مسیری که تلگرام باید بهش درخواست بفرسته
-        webhook_url=f"{webhook_url}/webhook" # آدرس کامل
+        url_path="webhook",
+        webhook_url=f"{webhook_url}/webhook"
     )
 
 if __name__ == "__main__":
