@@ -3,7 +3,8 @@ import logging
 import os
 import io
 import subprocess
-from telegram import Update, InputFile, InputMediaPhoto
+import traceback
+from telegram import Update, InputFile, InputMediaPhoto, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import perchance
 from PIL import Image
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get('PORT', 8443))
 
-# --- 2. دیکشنری سبک‌ها (کلید فارسی -> پرامپت انگلیسی) ---
+# --- 2. دیکشنری سبک‌ها ---
 STYLES = {
     "انیمه": "anime, cinematic, detailed",
     "واقعی": "photorealistic, high quality, 8k",
@@ -23,12 +24,11 @@ STYLES = {
     "کارتونی": "cartoon, disney style, colorful",
     "سایبرپانک": "cyberpunk, neon lights, futuristic",
     "فانتزی": "fantasy art, ethereal, magical",
-    "پیکسلی": "pixel art, 16-bit, retro"
+    "پیکسلی": "pixel art,16-bit, retro"
 }
 
 # --- 3. تابع نصب مرورگر ---
 def install_playwright_browser():
-    """این تابع مرورگر Playwright رو در صورت نیاز نصب می‌کنه."""
     try:
         logger.info("در حال بررسی نصب بودن مرورگر Playwright...")
         subprocess.run(["playwright", "install", "chromium"], check=True, capture_output=True, text=True)
@@ -42,10 +42,10 @@ def install_playwright_browser():
 
 # --- 4. توابع اصلی ربات ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """ارسال پیام خوشامدگویی و لیست سبک‌ها."""
     style_list = "\n".join([f"• {key}" for key in STYLES.keys()])
     await update.message.reply_text(
         "به ربات تولید عکس پیشرفته خوش آمدی! 🎨\n\n"
+        "این ربات **صبور** است و برای تولید ۴ عکس کمی زمان می‌برد.\n\n"
         "برای ساخت ۴ عکس، پیامت رو اینجوری بنویس:\n"
         "`موضوع عکس (به انگلیسی) | کلید سبک`\n\n"
         f"کلیدهای سبک موجود:\n{style_list}\n\n"
@@ -80,19 +80,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    await handle_image_generation(update, prompt, style_key)
+    # ارسال پیام فوری و شروع کار در پس‌زمینه
+    await update.message.reply_text(f"درخواست ساخت ۴ تصویر با سبک '{style_key}' ثبت شد. لطفاً صبر کنید... 🎨")
+    
+    # این کلیدی‌ترین خط است: کار رو به پس‌زمینه می‌فرسته
+    asyncio.create_task(
+        generate_and_send_images_in_background(
+            chat_id=update.effective_chat.id,
+            prompt=prompt,
+            style_key=style_key
+        )
+    )
 
-async def handle_image_generation(update: Update, prompt: str, style_key: str) -> None:
-    """تولید و ارسال ۴ تصویر به صورت یکجا."""
+# این تابع جدید تمام کار سنگین رو در پس‌زمینه انجام میده
+async def generate_and_send_images_in_background(chat_id: int, prompt: str, style_key: str):
+    """این تابع در پس‌زمینه اجرا می‌شه و زمان زیادی می‌بره."""
     style_prompt = STYLES[style_key]
     full_prompt = f"{prompt}, {style_prompt}"
     
-    await update.message.reply_text(f"در حال تولید ۴ تصویر با سبک '{style_key}'... ⏳")
-    
     media_group = []
     try:
+        # یک نمونه جدید از ربات می‌سازیم تا بتونیم پیام بفرستیم
+        bot = Bot(token=TOKEN)
         gen = perchance.ImageGenerator()
-        # حلقه برای تولید ۴ تصویر
+        
         for i in range(4):
             async with await gen.image(full_prompt) as result:
                 binary = await result.download()
@@ -102,25 +113,28 @@ async def handle_image_generation(update: Update, prompt: str, style_key: str) -
                 image.save(img_byte_arr, format='PNG')
                 img_byte_arr.seek(0)
                 
-                # اضافه کردن هر عکس به گروه مدیا
                 media_group.append(InputMediaPhoto(media=InputFile(img_byte_arr, filename=f"image_{i}.png")))
 
-        # ارسال تمام ۴ عکس به صورت یک آلبوم
-        await context.bot.send_media_group(
-            chat_id=update.effective_chat.id,
+        # وقتی همه چیز آماده شد، عکس‌ها رو می‌فرستیم
+        await bot.send_media_group(
+            chat_id=chat_id,
             media=media_group,
-            caption=f"۴ تصویر برای «{prompt}» با سبک «{style_key}» تولید شد."
+            caption=f"✅ ۴ تصویر برای «{prompt}» با سبک «{style_key}» آماده شد."
         )
             
     except Exception as e:
-        logger.error(f"Error generating image: {e}")
-        await update.message.reply_text(
-            "متأسفانه در تولید تصویر مشکلی پیش آمد. لطفاً کمی بعد دوباره تلاش کنید."
+        logger.error(f"خطا در تولید تصویر در پس‌زمینه: {e}")
+        logger.error(traceback.format_exc())
+        
+        # در صورت خطا هم به کاربر اطلاع می‌دیم
+        bot = Bot(token=TOKEN)
+        await bot.send_message(
+            chat_id=chat_id,
+            text="متأسفانه در تولید تصویر مشکلی پیش آمد. لطفاً کمی بعد دوباره تلاش کنید."
         )
 
-# --- 5. تابع اصلی با فراخوانی نصب مرورگر ---
+# --- 5. تابع اصلی ---
 def main() -> None:
-    """راه‌اندازی ربات با نصب مرورگر."""
     install_playwright_browser()
     
     application = Application.builder().token(TOKEN).build()
