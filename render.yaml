@@ -3,4 +3,4 @@ services:
     name: aaii
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "playwright install chromium && python aaa.py"
+    startCommand: "python aaa.py"
