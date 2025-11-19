@@ -3,10 +3,10 @@ import logging
 import os
 import io
 import requests
-import urllib.parse # این کتابخانه رو اضافه کردیم
+import urllib.parse
 from telegram import Update, InputFile, InputMediaPhoto
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from PIL import Image
+from PIL import Image # این کتابخانه رو دوباره اضافه کردیم
 
 # --- 1. تنظیمات اولیه ---
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -69,9 +69,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     await handle_image_generation(update, context, prompt, style_key)
 
-# *** این تابع رو اصلاح کردیم ***
+# *** این تابع رو با اعتبارسنجی عکس کامل بازنویسی کردیم ***
 async def handle_image_generation(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt: str, style_key: str) -> None:
-    """تولید و ارسال ۴ تصویر با URL صحیح."""
+    """تولید و ارسال ۴ تصویر با اعتبارسنجی."""
     style_prompt = STYLES[style_key]
     full_prompt = f"{prompt}, {style_prompt}"
     
@@ -79,16 +79,19 @@ async def handle_image_generation(update: Update, context: ContextTypes.DEFAULT_
     
     media_group = []
     try:
-        # این کلیدی‌ترین تغییر است
-        encoded_prompt = urllib.parse.quote(full_prompt)
-        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-        
         # حلقه برای تولید ۴ تصویر
         for i in range(4):
-            response = requests.get(url)
-            response.raise_for_status()
+            encoded_prompt = urllib.parse.quote(full_prompt)
+            url = f"https://image.pollinations.ai/prompt/{encoded_prompt}"
             
+            response = requests.get(url)
+            response.raise_for_status() # چک کردن خطای HTTP
+            
+            # *** اینجا کلیدی‌ترین تغییر رو داریم ***
+            # باز کردن عکس با Pillow برای اعتبارسنجی
             image = Image.open(io.BytesIO(response.content))
+            
+            # ذخیره عکس در یک شیء BytesIO به صورت PNG
             img_byte_arr = io.BytesIO()
             image.save(img_byte_arr, format='PNG')
             img_byte_arr.seek(0)
