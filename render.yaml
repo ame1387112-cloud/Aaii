@@ -1,6 +1,13 @@
 services:
   - type: web
-    name: aaii
+    name: telegram-bot
     env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python aaa.py"
+    pythonVersion: "3.11"
+    buildCommand: |
+      pip install -r requirements.txt
+      playwright install
+      playwright install-deps
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
