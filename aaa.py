@@ -27,17 +27,19 @@ STYLES = {
     "پیکسلی": "pixel art,16-bit, retro"
 }
 
-# --- 3. تابع نصب مرورگر ---
+# --- 3. تابع نصب مرورگر (اصلاح شده) ---
 def install_playwright_browser():
+    """این تابع تمام مرورگرهای مورد نیاز Playwright رو نصب می‌کنه."""
     try:
-        logger.info("در حال بررسی نصب بودن مرورگر Playwright...")
-        subprocess.run(["playwright", "install", "chromium"], check=True, capture_output=True, text=True)
-        logger.info("مرورگر Playwright با موفقیت آماده به کار شد.")
+        logger.info("در حال نصب تمام مرورگرهای Playwright (شامل فایرفاکس)...")
+        # این خط کلیدی رو تغییر دادیم تا همه مرورگرها نصب بشن
+        subprocess.run(["playwright", "install"], check=True, capture_output=True, text=True)
+        logger.info("تمام مرورگرهای Playwright با موفقیت نصب شدند.")
     except FileNotFoundError:
         logger.error("دستور playwright پیدا نشد. آیا کتابخانه به درستی نصب شده؟")
         raise
     except subprocess.CalledProcessError as e:
-        logger.error(f"خطا هنگام نصب مرورگر: {e.stderr}")
+        logger.error(f"خطا هنگام نصب مرورگرها: {e.stderr}")
         raise
 
 # --- 4. توابع اصلی ربات ---
@@ -80,10 +82,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    # ارسال پیام فوری و شروع کار در پس‌زمینه
     await update.message.reply_text(f"درخواست ساخت ۴ تصویر با سبک '{style_key}' ثبت شد. لطفاً صبر کنید... 🎨")
     
-    # این کلیدی‌ترین خط است: کار رو به پس‌زمینه می‌فرسته
     asyncio.create_task(
         generate_and_send_images_in_background(
             chat_id=update.effective_chat.id,
@@ -92,7 +92,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
     )
 
-# این تابع جدید تمام کار سنگین رو در پس‌زمینه انجام میده
 async def generate_and_send_images_in_background(chat_id: int, prompt: str, style_key: str):
     """این تابع در پس‌زمینه اجرا می‌شه و زمان زیادی می‌بره."""
     style_prompt = STYLES[style_key]
@@ -100,7 +99,6 @@ async def generate_and_send_images_in_background(chat_id: int, prompt: str, styl
     
     media_group = []
     try:
-        # یک نمونه جدید از ربات می‌سازیم تا بتونیم پیام بفرستیم
         bot = Bot(token=TOKEN)
         gen = perchance.ImageGenerator()
         
@@ -115,7 +113,6 @@ async def generate_and_send_images_in_background(chat_id: int, prompt: str, styl
                 
                 media_group.append(InputMediaPhoto(media=InputFile(img_byte_arr, filename=f"image_{i}.png")))
 
-        # وقتی همه چیز آماده شد، عکس‌ها رو می‌فرستیم
         await bot.send_media_group(
             chat_id=chat_id,
             media=media_group,
@@ -126,7 +123,6 @@ async def generate_and_send_images_in_background(chat_id: int, prompt: str, styl
         logger.error(f"خطا در تولید تصویر در پس‌زمینه: {e}")
         logger.error(traceback.format_exc())
         
-        # در صورت خطا هم به کاربر اطلاع می‌دیم
         bot = Bot(token=TOKEN)
         await bot.send_message(
             chat_id=chat_id,
