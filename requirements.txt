@@ -1,4 +1,4 @@
-python-telegram-bot[webhooks]
-perchance
-Pillow
-
+python-telegram-bot==20.7
+pillow==10.0.1
+playwright==1.40.0
+perchance==0.1.5
