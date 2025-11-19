@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import io
-import requests # کتابخانه ساده برای درخواست وب
+import requests
 from telegram import Update, InputFile, InputMediaPhoto
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from PIL import Image
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.environ.get('PORT', 8443))
 
-# --- 2. دیکشنری سبک‌ها (همون قبلی) ---
+# --- 2. دیکشنری سبک‌ها ---
 STYLES = {
     "انیمه": "anime, cinematic, detailed",
     "واقعی": "photorealistic, high quality, 8k",
@@ -27,6 +27,7 @@ STYLES = {
 
 # --- 3. توابع اصلی ربات ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """پیام خوشامدگویی و لیست سبک‌ها."""
     style_list = "\n".join([f"• {key}" for key in STYLES.keys()])
     await update.message.reply_text(
         "به ربات تولید عکس پایدار و سریع خوش آمدی! 🎨\n\n"
@@ -65,10 +66,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    await handle_image_generation(update, prompt, style_key)
+    # *** تغییر اول: اینجا context رو هم به تابع بعدی می‌فرستیم ***
+    await handle_image_generation(update, context, prompt, style_key)
 
-async def handle_image_generation(update: Update, prompt: str, style_key: str) -> None:
-    """تولید و ارسال ۴ تصویر با API پایدار."""
+# *** تغییر دوم: اینجا context رو به عنوان ورودی دریافت می‌کنیم ***
+async def handle_image_generation(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt: str, style_key: str) -> None:
+    """تولید و ارسال ۴ تصویر."""
     style_prompt = STYLES[style_key]
     full_prompt = f"{prompt}, {style_prompt}"
     
@@ -76,16 +79,13 @@ async def handle_image_generation(update: Update, prompt: str, style_key: str) -
     
     media_group = []
     try:
-        # حلقه برای تولید ۴ تصویر با API
+        # حلقه برای تولید ۴ تصویر
         for i in range(4):
-            # ساخت آدرس درخواست به Pollinations
             url = f"https://image.pollinations.ai/prompt/{full_prompt}"
             
-            # دانلود عکس
             response = requests.get(url)
-            response.raise_for_status() # چک کردن اینکه درخواست موفقیت‌آمیز بوده
+            response.raise_for_status()
             
-            # آماده‌سازی عکس برای ارسال
             image = Image.open(io.BytesIO(response.content))
             img_byte_arr = io.BytesIO()
             image.save(img_byte_arr, format='PNG')
@@ -106,19 +106,22 @@ async def handle_image_generation(update: Update, prompt: str, style_key: str) -
             "متأسفانه در تولید تصویر مشکلی پیش آمد. لطفاً کمی بعد دوباره تلاش کنید."
         )
 
-# --- 4. تابع اصلی (دیگه نیازی به نصب مرورگر نیست) ---
+# --- 4. تابع اصلی با Webhook ---
 def main() -> None:
-    """راه‌اندازی ربات با Webhook."""
+    """راه‌اندازی ربات با وبهوک."""
     application = Application.builder().token(TOKEN).build()
     
+    # اضافه کردن هندلرها
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
+    # آدرس وبهوک
     webhook_url = os.getenv("RENDER_EXTERNAL_URL")
     if not webhook_url:
         logger.error("متغیر RENDER_EXTERNAL_URL تنظیم نشده است.")
         return
 
+    # راه‌اندازی ربات با وبهوک
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
