@@ -6,10 +6,17 @@ import subprocess
 import traceback
 from collections import defaultdict
 from datetime import datetime, timedelta
-from telegram import Update, InputFile, InputMediaPhoto, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import perchance
-from PIL import Image
+
+try:
+    from telegram import Update, InputFile, InputMediaPhoto, Bot
+    from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+    import perchance
+    from PIL import Image
+except ImportError as e:
+    print(f"Import error: {e}")
+    print("Please check your requirements.txt file")
+    exit(1)
+
 
 # --- 1. تنظیمات اولیه ---
 logging.basicConfig(
