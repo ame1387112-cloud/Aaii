@@ -3,6 +3,7 @@ import logging
 import os
 import io
 import requests
+import urllib.parse # این کتابخانه رو اضافه کردیم
 from telegram import Update, InputFile, InputMediaPhoto
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from PIL import Image
@@ -66,12 +67,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
-    # *** تغییر اول: اینجا context رو هم به تابع بعدی می‌فرستیم ***
     await handle_image_generation(update, context, prompt, style_key)
 
-# *** تغییر دوم: اینجا context رو به عنوان ورودی دریافت می‌کنیم ***
+# *** این تابع رو اصلاح کردیم ***
 async def handle_image_generation(update: Update, context: ContextTypes.DEFAULT_TYPE, prompt: str, style_key: str) -> None:
-    """تولید و ارسال ۴ تصویر."""
+    """تولید و ارسال ۴ تصویر با URL صحیح."""
     style_prompt = STYLES[style_key]
     full_prompt = f"{prompt}, {style_prompt}"
     
@@ -79,10 +79,12 @@ async def handle_image_generation(update: Update, context: ContextTypes.DEFAULT_
     
     media_group = []
     try:
+        # این کلیدی‌ترین تغییر است
+        encoded_prompt = urllib.parse.quote(full_prompt)
+        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+        
         # حلقه برای تولید ۴ تصویر
         for i in range(4):
-            url = f"https://image.pollinations.ai/prompt/{full_prompt}"
-            
             response = requests.get(url)
             response.raise_for_status()
             
@@ -106,22 +108,19 @@ async def handle_image_generation(update: Update, context: ContextTypes.DEFAULT_
             "متأسفانه در تولید تصویر مشکلی پیش آمد. لطفاً کمی بعد دوباره تلاش کنید."
         )
 
-# --- 4. تابع اصلی با Webhook ---
+# --- 4. تابع اصلی ---
 def main() -> None:
     """راه‌اندازی ربات با وبهوک."""
     application = Application.builder().token(TOKEN).build()
     
-    # اضافه کردن هندلرها
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # آدرس وبهوک
     webhook_url = os.getenv("RENDER_EXTERNAL_URL")
     if not webhook_url:
         logger.error("متغیر RENDER_EXTERNAL_URL تنظیم نشده است.")
         return
 
-    # راه‌اندازی ربات با وبهوک
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
